@@ -40,15 +40,16 @@ RUN \
     [ -n "$curl_hdr_dir" ] && [ -d "$curl_hdr_dir" ] && \
     cp -r "$curl_hdr_dir" /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/curl
 
-# Debian ships opensslconf.h in the multiarch include dir (e.g.
-# /usr/include/x86_64-linux-gnu/openssl/), which zig cc does not search.
-# Copy it into zig's own include dir so openssl-sys can find it during
-# cross-compilation — same problem/fix as the curl headers above.
+# Debian ships generated OpenSSL headers (opensslconf.h, configuration.h, ...)
+# in the multiarch include dir (e.g. /usr/include/x86_64-linux-gnu/openssl/),
+# which zig cc does not search. Copy the whole directory into zig's own include
+# dir so openssl-sys can find them — same problem/fix as the curl headers above.
 RUN \
     openssl_conf="$(dpkg -L libssl-dev | grep -m1 '/openssl/opensslconf\.h$')" && \
     [ -n "$openssl_conf" ] && [ -f "$openssl_conf" ] && \
+    openssl_inc="$(dirname "$(dirname "$openssl_conf")")/openssl" && \
     mkdir -p /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl && \
-    cp "$openssl_conf" /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl/opensslconf.h
+    cp -r "$openssl_inc/." /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl/
 
 # *****************
 # Planner
