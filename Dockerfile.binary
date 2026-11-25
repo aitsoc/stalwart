@@ -87,7 +87,10 @@ RUN \
     fi && \
     base_arch="${TARGET%%-*}"; \
     case "$base_arch" in \
-        x86_64) echo "export FDB_ARCH=amd64" >> /env-cargo ;; \
+        x86_64) \
+            echo "export FDB_ARCH=amd64" >> /env-cargo; \
+            echo "export OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> /env-cargo; \
+            echo "export OPENSSL_INCLUDE_DIR=/usr/include" >> /env-cargo ;; \
         aarch64) \
             echo "export FDB_ARCH=aarch64" >> /env-cargo; \
             echo "export OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> /env-cargo; \
