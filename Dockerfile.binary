@@ -64,10 +64,9 @@ ARG BUILD_ENV
 # same problem/fix as the curl headers above. Must be target-aware: the amd64
 # and arm64 packages install different generated headers.
 RUN \
-    ssl_pkg="$(case "${TARGET%%-*}" in aarch64) echo libssl-dev:arm64 ;; *) echo libssl-dev ;; esac)" && \
-    openssl_conf="$(dpkg -L "$ssl_pkg" | grep -m1 '/openssl/opensslconf\.h$')" && \
-    [ -n "$openssl_conf" ] && [ -f "$openssl_conf" ] && \
-    openssl_inc="$(dirname "$(dirname "$openssl_conf")")/openssl" && \
+    multiarch="$(case "${TARGET%%-*}" in aarch64) echo aarch64-linux-gnu ;; *) echo x86_64-linux-gnu ;; esac)" && \
+    openssl_inc="/usr/include/${multiarch}/openssl" && \
+    [ -d "$openssl_inc" ] && \
     mkdir -p /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl && \
     cp -r "$openssl_inc/." /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl/
 
