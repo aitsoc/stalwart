@@ -22,7 +22,7 @@ RUN \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' >/etc/apt/apt.conf.d/keep-cache && \
     apt-get update && \
-    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils make cmake pkg-config libcurl4-openssl-dev libclang-19-dev
+    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils make cmake pkg-config libssl-dev libcurl4-openssl-dev libclang-19-dev
 
 RUN \
     ZIG_VERSION=0.13.0 && \
@@ -39,6 +39,16 @@ RUN \
     curl_hdr_dir="$(dpkg -L libcurl4-openssl-dev | grep -m1 '/curl/curl\.h$' | xargs dirname)" && \
     [ -n "$curl_hdr_dir" ] && [ -d "$curl_hdr_dir" ] && \
     cp -r "$curl_hdr_dir" /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/curl
+
+# Debian ships opensslconf.h in the multiarch include dir (e.g.
+# /usr/include/x86_64-linux-gnu/openssl/), which zig cc does not search.
+# Copy it into zig's own include dir so openssl-sys can find it during
+# cross-compilation — same problem/fix as the curl headers above.
+RUN \
+    openssl_conf="$(dpkg -L libssl-dev | grep -m1 '/openssl/opensslconf\.h$')" && \
+    [ -n "$openssl_conf" ] && [ -f "$openssl_conf" ] && \
+    mkdir -p /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl && \
+    cp "$openssl_conf" /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl/opensslconf.h
 
 # *****************
 # Planner
