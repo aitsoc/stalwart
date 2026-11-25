@@ -50,9 +50,9 @@ tikv-jemallocator = "0.7"
 tikv-jemallocator = { version = "0.7", features = ["unprefixed_malloc_on_supported_platforms"] }
 
 [features]
-#default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "azure", "nats", "enterprise", "zenoh", "kafka"]
+default = ["sqlite", "foundationdb","postgres", "mysql", "rocks", "s3", "redis", "keep","azure", "nats", "exchange","enterprise", "zenoh", "kafka"]
 #default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "azure", "nats", "enterprise"]
-default = ["rocks", "enterprise", "keep", "exchange"]
+#default = ["rocks", "enterprise", "keep", "exchange"]
 sqlite = ["store/sqlite", "directory/sqlite"]
 foundationdb = ["store/foundation-native", "common/foundation"]
 foundationdb-c = ["store/foundation-c", "common/foundation"]
