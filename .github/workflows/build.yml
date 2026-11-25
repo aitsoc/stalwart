@@ -166,6 +166,8 @@ jobs:
             BUILD_ENV=${{ matrix.build_env }}
             FDB_VERSION_RANGE=${{ needs.detect-fdb.outputs.fdb_range }}
             FEATURES=sqlite,foundationdb,postgres,mysql,rocks,s3,redis,keep,azure,nats,exchange,enterprise,zenoh,kafka
+          secrets: |
+            GITHUB_TOKEN=${{ github.token }}
           outputs: type=local,dest=${{ runner.temp }}/binary
           cache-from: type=gha,scope=binary-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=binary-${{ matrix.arch }}

@@ -96,8 +96,11 @@ RUN \
 
 ARG FDB_VERSION_RANGE="7.4"
 RUN \
+    --mount=type=secret,id=GITHUB_TOKEN,env=GH_TOKEN \
     source /env-cargo && \
-    curl --retry 5 -fLso fdb-client.deb "$(curl --retry 5 -fLs 'https://api.github.com/repos/apple/foundationdb/releases?per_page=100' | jq --arg FDB_ARCH "$FDB_ARCH" --arg RANGE "${FDB_VERSION_RANGE}" -r '[.[] | select(.tag_name | startswith($RANGE + ".")) | select(.prerelease == false) | select(.draft == false)] | sort_by(.tag_name | split(".") | map(tonumber)) | reverse | .[0].assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + ".deb$")) | .browser_download_url')" && \
+    fdb_url="$(curl --retry 5 -fsSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3+json" 'https://api.github.com/repos/apple/foundationdb/releases?per_page=100' | jq --arg FDB_ARCH "$FDB_ARCH" --arg RANGE "${FDB_VERSION_RANGE}" -r '[.[] | select(.tag_name | startswith($RANGE + ".")) | select(.prerelease == false) | select(.draft == false)] | sort_by(.tag_name | split(".") | map(tonumber)) | reverse | .[0].assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + ".deb$")) | .browser_download_url')" && \
+    if [ -z "$fdb_url" ]; then echo "ERROR: could not resolve FoundationDB client download URL for ${FDB_ARCH} / ${FDB_VERSION_RANGE}" >&2; exit 1; fi && \
+    curl --retry 5 -fLso fdb-client.deb "$fdb_url" && \
     mkdir -p /fdb && \
     dpkg -x fdb-client.deb /fdb && \
     mv /fdb/usr/include/foundationdb /usr/include && \
