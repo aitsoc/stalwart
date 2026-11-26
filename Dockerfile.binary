@@ -25,7 +25,7 @@ RUN \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' >/etc/apt/apt.conf.d/keep-cache && \
     apt-get update && \
-    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils make cmake perl pkg-config libcurl4-openssl-dev libclang-dev && \
+    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils gcc g++ make cmake perl pkg-config libcurl4-openssl-dev libclang-dev && \
     curl --retry 5 -fL --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path --default-toolchain stable && \
     rustc --version && cargo --version
 
