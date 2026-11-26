@@ -81,6 +81,7 @@ RUN \
     rustup target add ${TARGET} && \
     mkdir -p artifact && \
     touch /env-cargo && \
+    echo "export OPENSSL_STATIC=1" >> /env-cargo && \
     if [ ! -z "${BUILD_ENV}" ]; then \
         echo "export ${BUILD_ENV}" >> /env-cargo; \
         echo "Setting up ${BUILD_ENV}"; \
