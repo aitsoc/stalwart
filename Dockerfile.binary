@@ -4,12 +4,11 @@
 # Builds a single all-features stalwart binary + libfdb_c.so
 
 # *****************
-# Base image (Ubuntu)
+# Base image (RHEL 10 / UBI 10)
 # *****************
-FROM --platform=$BUILDPLATFORM ubuntu:latest AS base
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/ubi:10.2 AS base
 
-ENV DEBIAN_FRONTEND="noninteractive" \
-    BINSTALL_DISABLE_TELEMETRY=true \
+ENV BINSTALL_DISABLE_TELEMETRY=true \
     CARGO_TERM_COLOR=always \
     LANG=C.UTF-8 \
     TZ=UTC \
@@ -20,12 +19,13 @@ ENV DEBIAN_FRONTEND="noninteractive" \
     PATH="/usr/local/cargo/bin:${PATH}"
 
 RUN \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean && \
-    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' >/etc/apt/apt.conf.d/keep-cache && \
-    apt-get update && \
-    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils gcc g++ make cmake perl pkg-config libcurl4-openssl-dev libclang-dev && \
+    --mount=type=cache,target=/var/cache/dnf,sharing=locked \
+    dnf install -y --setopt=install_weak_deps=0 \
+        --enablerepo=codeready-builder-for-ubi-10-x86_64-rpms \
+        gcc gcc-c++ make cmake perl pkg-config xz cpio ca-certificates curl libcurl-devel clang-devel && \
+    dnf clean all && \
+    curl --retry 5 -fLso /usr/local/bin/jq https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64 && \
+    chmod 755 /usr/local/bin/jq && \
     curl --retry 5 -fL --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path --default-toolchain stable && \
     rustc --version && cargo --version
 
@@ -38,10 +38,11 @@ RUN \
 RUN curl --retry 5 -fL --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall --no-confirm cargo-chef cargo-zigbuild sccache
 
-# zig cc for cross-compilation does not search /usr/include by default,
-# so copy curl headers into zig's own lib/include/ for all-target discovery.
+# zig cc for cross-compilation does not search the system include dir by
+# default, so copy curl headers into zig's own lib/include/ for all-target
+# discovery.
 RUN \
-    curl_hdr_dir="$(dpkg -L libcurl4-openssl-dev | grep -m1 '/curl/curl\.h$' | xargs dirname)" && \
+    curl_hdr_dir="$(rpm -ql libcurl-devel | grep -m1 '/curl/curl\.h$' | xargs dirname)" && \
     [ -n "$curl_hdr_dir" ] && [ -d "$curl_hdr_dir" ] && \
     cp -r "$curl_hdr_dir" /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/curl
 
@@ -87,14 +88,16 @@ ARG FDB_VERSION_RANGE="7.4"
 RUN \
     --mount=type=secret,id=GITHUB_TOKEN,env=GH_TOKEN \
     source /env-cargo && \
-    fdb_url="$(curl --retry 5 -fsSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3+json" 'https://api.github.com/repos/apple/foundationdb/releases?per_page=100' | jq --arg FDB_ARCH "$FDB_ARCH" --arg RANGE "${FDB_VERSION_RANGE}" -r '[.[] | select(.tag_name | startswith($RANGE + ".")) | select(.prerelease == false) | select(.draft == false)] | sort_by(.tag_name | split(".") | map(tonumber)) | reverse | .[0].assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + ".deb$")) | .browser_download_url')" && \
-    if [ -z "$fdb_url" ]; then echo "ERROR: could not resolve FoundationDB client download URL for ${FDB_ARCH} / ${FDB_VERSION_RANGE}" >&2; exit 1; fi && \
-    curl --retry 5 -fLso fdb-client.deb "$fdb_url" && \
-    mkdir -p /fdb && \
-    dpkg -x fdb-client.deb /fdb && \
-    mv /fdb/usr/include/foundationdb /usr/include && \
-    mv /fdb/usr/lib/libfdb_c.so /usr/lib && \
-    rm -rf fdb-client.deb /fdb
+    fdb_arch="$(case "$FDB_ARCH" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; esac)" && \
+    fdb_url="$(curl --retry 5 -fsSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3+json" 'https://api.github.com/repos/apple/foundationdb/releases?per_page=100' | jq --arg FDB_ARCH "$fdb_arch" --arg RANGE "${FDB_VERSION_RANGE}" -r '[.[] | select(.tag_name | startswith($RANGE + ".")) | select(.prerelease == false) | select(.draft == false)] | sort_by(.tag_name | split(".") | map(tonumber)) | reverse | .[0].assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + "\\.rpm$")) | select(.name | contains("debuginfo") | not) | .browser_download_url')" && \
+    if [ -z "$fdb_url" ]; then echo "ERROR: could not resolve FoundationDB client RPM URL for ${fdb_arch} / ${FDB_VERSION_RANGE}" >&2; exit 1; fi && \
+    curl --retry 5 -fLso fdb-client.rpm "$fdb_url" && \
+    mkdir -p /fdb && cd /fdb && rpm2cpio /fdb-client.rpm | cpio -idmv && \
+    fdb_lib="$(find /fdb -name libfdb_c.so -print -quit)" && \
+    if [ -z "$fdb_lib" ]; then echo "ERROR: libfdb_c.so not found in FoundationDB client RPM" >&2; exit 1; fi && \
+    cp "$fdb_lib" /usr/lib64/libfdb_c.so && \
+    if [ -d /fdb/usr/include/foundationdb ]; then cp -r /fdb/usr/include/foundationdb /usr/include/; fi && \
+    rm -rf /fdb /fdb-client.rpm
 
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
@@ -102,7 +105,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "${FEATURES}"
+    RUSTFLAGS="-L /usr/lib64" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "${FEATURES}"
 
 COPY . .
 
@@ -114,7 +117,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    RUSTFLAGS="-L /usr/lib" cargo-zigbuild build --release --target ${TARGET} -p stalwart --no-default-features --features "${FEATURES}" && \
+    RUSTFLAGS="-L /usr/lib64" cargo-zigbuild build --release --target ${TARGET} -p stalwart --no-default-features --features "${FEATURES}" && \
     mv /app/target/${TARGET}/release/stalwart /app/artifact/stalwart
 
 # *****************
@@ -122,4 +125,4 @@ RUN \
 # *****************
 FROM scratch AS binaries
 COPY --from=builder /app/artifact/stalwart /stalwart
-COPY --from=builder /usr/lib/libfdb_c.so /libfdb_c.so
+COPY --from=builder /usr/lib64/libfdb_c.so /libfdb_c.so
