@@ -4,9 +4,9 @@
 # Builds a single all-features stalwart binary + libfdb_c.so
 
 # *****************
-# Base image
+# Base image (Ubuntu)
 # *****************
-FROM --platform=$BUILDPLATFORM rust:slim-trixie AS base
+FROM --platform=$BUILDPLATFORM ubuntu:latest AS base
 
 ENV DEBIAN_FRONTEND="noninteractive" \
     BINSTALL_DISABLE_TELEMETRY=true \
@@ -14,16 +14,20 @@ ENV DEBIAN_FRONTEND="noninteractive" \
     LANG=C.UTF-8 \
     TZ=UTC \
     TERM=xterm-256color \
-    AWS_LC_SYS_PREBUILT_NASM=1
+    AWS_LC_SYS_PREBUILT_NASM=1 \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH="/usr/local/cargo/bin:${PATH}"
 
 RUN \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    dpkg --add-architecture arm64 && \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' >/etc/apt/apt.conf.d/keep-cache && \
     apt-get update && \
-    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils make cmake perl pkg-config libssl-dev libssl-dev:arm64 libcurl4-openssl-dev libclang-19-dev
+    apt-get install -yq --no-install-recommends ca-certificates curl jq xz-utils make cmake perl pkg-config libcurl4-openssl-dev libclang-dev && \
+    curl --retry 5 -fL --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path --default-toolchain stable && \
+    rustc --version && cargo --version
 
 RUN \
     ZIG_VERSION=0.13.0 && \
@@ -58,18 +62,6 @@ COPY --from=planner /app/recipe.json recipe.json
 ARG TARGET
 ARG BUILD_ENV
 
-# Debian ships generated OpenSSL headers (opensslconf.h, configuration.h, ...)
-# in the multiarch include dir, which zig cc does not search. Copy the target's
-# generated headers into zig's own include dir so openssl-sys can find them —
-# same problem/fix as the curl headers above. Must be target-aware: the amd64
-# and arm64 packages install different generated headers.
-RUN \
-    multiarch="$(case "${TARGET%%-*}" in aarch64) echo aarch64-linux-gnu ;; *) echo x86_64-linux-gnu ;; esac)" && \
-    openssl_inc="/usr/include/${multiarch}/openssl" && \
-    [ -d "$openssl_inc" ] && \
-    mkdir -p /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl && \
-    cp -r "$openssl_inc/." /usr/local/zig-linux-$(uname -m)-0.13.0/lib/include/openssl/
-
 # Complete production feature set (matches crates/main/Cargo.toml default;
 # dev_mode is intentionally excluded). foundationdb-c is not included:
 # it would replace the native backend and is not part of the default build.
@@ -81,21 +73,14 @@ RUN \
     rustup target add ${TARGET} && \
     mkdir -p artifact && \
     touch /env-cargo && \
-    echo "export OPENSSL_STATIC=1" >> /env-cargo && \
     if [ ! -z "${BUILD_ENV}" ]; then \
         echo "export ${BUILD_ENV}" >> /env-cargo; \
         echo "Setting up ${BUILD_ENV}"; \
     fi && \
     base_arch="${TARGET%%-*}"; \
     case "$base_arch" in \
-        x86_64) \
-            echo "export FDB_ARCH=amd64" >> /env-cargo; \
-            echo "export OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> /env-cargo; \
-            echo "export OPENSSL_INCLUDE_DIR=/usr/include" >> /env-cargo ;; \
-        aarch64) \
-            echo "export FDB_ARCH=aarch64" >> /env-cargo; \
-            echo "export OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> /env-cargo; \
-            echo "export OPENSSL_INCLUDE_DIR=/usr/include" >> /env-cargo ;; \
+        x86_64) echo "export FDB_ARCH=amd64" >> /env-cargo ;; \
+        aarch64) echo "export FDB_ARCH=aarch64" >> /env-cargo ;; \
     esac
 
 ARG FDB_VERSION_RANGE="7.4"
