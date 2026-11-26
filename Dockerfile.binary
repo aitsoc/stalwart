@@ -91,8 +91,8 @@ RUN \
     fdb_arch="$(case "$FDB_ARCH" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; esac)" && \
     fdb_url="$(curl --retry 5 -fsSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3+json" 'https://api.github.com/repos/apple/foundationdb/releases?per_page=100' | jq --arg FDB_ARCH "$fdb_arch" --arg RANGE "${FDB_VERSION_RANGE}" -r '[.[] | select(.tag_name | startswith($RANGE + ".")) | select(.prerelease == false) | select(.draft == false)] | sort_by(.tag_name | split(".") | map(tonumber)) | reverse | .[0].assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + "\\.rpm$")) | select(.name | contains("debuginfo") | not) | .browser_download_url')" && \
     if [ -z "$fdb_url" ]; then echo "ERROR: could not resolve FoundationDB client RPM URL for ${fdb_arch} / ${FDB_VERSION_RANGE}" >&2; exit 1; fi && \
-    curl --retry 5 -fLso fdb-client.rpm "$fdb_url" && \
-    mkdir -p /fdb && cd /fdb && rpm2cpio /fdb-client.rpm | cpio -idmv && \
+    curl --retry 5 -fLso /fdb-client.rpm "$fdb_url" && \
+    mkdir -p /fdb && rpm2cpio /fdb-client.rpm | (cd /fdb && cpio -idmv) && \
     fdb_lib="$(find /fdb -name libfdb_c.so -print -quit)" && \
     if [ -z "$fdb_lib" ]; then echo "ERROR: libfdb_c.so not found in FoundationDB client RPM" >&2; exit 1; fi && \
     cp "$fdb_lib" /usr/lib64/libfdb_c.so && \
